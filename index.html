@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grabador de Pantalla</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <style>
+        /* Estilos (incluyendo nota importante) */
+        body { font-family: 'Inter', sans-serif; background-color: #1f2937; color: #f3f4f6; }
+        .control-panel { background-color: #374151; border-radius: 0.5rem; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.75rem 1.5rem; border-radius: 0.375rem; font-weight: 500; transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out; cursor: pointer; border: none; }
+        .btn-primary { background-color: #3b82f6; color: white; }
+        .btn-primary:hover { background-color: #2563eb; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); }
+        .btn-secondary { background-color: #ef4444; color: white; }
+        .btn-secondary:hover { background-color: #dc2626; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5); }
+        .btn-disabled { background-color: #6b7280; color: #d1d5db; cursor: not-allowed; }
+        select, .input-group label { color: #d1d5db; }
+        select { background-color: #4b5563; border: 1px solid #6b7280; padding: 0.5rem; border-radius: 0.375rem; width: 100%; }
+        #videoPreviewContainer { background-color: #4b5563; border-radius: 0.5rem; min-height: 300px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        #videoPreview { display: none; } /* Video element is not used for preview anymore */
+        #placeholderText { color: #9ca3af; display: block !important; }
+        #statusMessage { margin-top: 1rem; padding: 0.75rem; border-radius: 0.375rem; text-align: center; display: none; }
+        .status-info { background-color: #1e40af; color: #dbeafe; }
+        .status-error { background-color: #991b1b; color: #fecaca; }
+        .status-success { background-color: #065f46; color: #d1fae5; }
+        .important-note {
+            background-color: rgba(59, 130, 246, 0.2);
+            border-left: 4px solid #3b82f6;
+            padding: 0.75rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+            color: #bfdbfe;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="p-8">
+    <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+
+        <div class="md:col-span-1 order-first md:order-last">
+            <div class="control-panel space-y-6">
+                <h2 class="text-xl font-semibold mb-4 text-white">Configuración de Grabación</h2>
+                <div class="input-group">
+                    <label for="displaySurface" class="block text-sm font-medium mb-1">Área a Grabar:</label>
+                    <select id="displaySurface" name="displaySurface">
+                        <option value="monitor">Pantalla Completa</option>
+                        <option value="window">Ventana de Aplicación</option>
+                        <option value="browser">Pestaña del Navegador</option>
+                    </select>
+                    <p class="text-xs text-gray-400 mt-1">El navegador te pedirá confirmación.</p>
+                </div>
+                <div class="input-group">
+                    <label for="audioSource" class="block text-sm font-medium mb-1">Fuente de Audio:</label>
+                    <select id="audioSource" name="audioSource">
+                        <option value="system+mic">Sistema + Micrófono</option>
+                        <option value="system">Solo Sistema</option>
+                        <option value="mic">Solo Micrófono</option>
+                        <option value="none">Sin Audio</option>
+                    </select>
+                     <div id="systemAudioNote" class="important-note mt-2" style="display: none;">
+                         <i class="fas fa-info-circle mr-1"></i>
+                         ¡Importante! Para grabar audio del sistema, activa el interruptor <strong class="font-semibold">"Compartir también el audio del sistema"</strong> (o similar) en la ventana de permisos del navegador.
+                     </div>
+                </div>
+                <div class="flex flex-col space-y-3">
+                    <button id="startButton" class="btn btn-primary">
+                        <i class="fas fa-record-vinyl mr-2"></i> Iniciar Grabación
+                    </button>
+                    <button id="stopButton" class="btn btn-secondary" disabled>
+                        <i class="fas fa-stop mr-2"></i> Detener Grabación
+                    </button>
+                </div>
+                 <div id="statusIndicator" class="text-sm text-center text-gray-400">
+                     Estado: Inactivo
+                 </div>
+                <div id="downloadLinkContainer" class="mt-4 text-center" style="display: none;"> <a id="downloadLink" download="grabacion.webm"></a>
+                </div>
+            </div>
+             <div id="statusMessage"></div>
+        </div>
+
+        <div class="md:col-span-2 order-last md:order-first">
+             <h2 class="text-xl font-semibold mb-4 text-white">Grabador</h2>
+            <div id="videoPreviewContainer">
+                <video id="videoPreview" controls muted playsinline></video> <p id="placeholderText">Detén la grabación para descargar el archivo.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Referencias DOM ---
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const placeholderText = document.getElementById('placeholderText'); // Reference needed for placeholder text
+        const displaySurfaceSelect = document.getElementById('displaySurface'); // *** CORRECCIÓN: Añadida la referencia que faltaba ***
+        const audioSourceSelect = document.getElementById('audioSource');
+        const downloadLink = document.getElementById('downloadLink');
+        const downloadLinkContainer = document.getElementById('downloadLinkContainer'); // Reference needed for container
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusMessage = document.getElementById('statusMessage');
+        const systemAudioNote = document.getElementById('systemAudioNote');
+
+        // --- Variables globales ---
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let screenStream = null;
+        let micStream = null;
+        let objectUrl = null;
+        let audioContext = null;
+        let audioDestination = null;
+
+        // --- Funciones ---
+        function showStatus(message, type = 'info') {
+             statusMessage.textContent = message;
+             statusMessage.className = '';
+             statusMessage.classList.add(`status-${type}`);
+             statusMessage.style.display = 'block';
+             console.log(`Status (${type}): ${message}`);
+        }
+
+        function hideStatus() {
+            statusMessage.style.display = 'none';
+        }
+
+        function updateUI(isRecording) {
+            startButton.disabled = isRecording;
+            stopButton.disabled = !isRecording;
+            displaySurfaceSelect.disabled = isRecording;
+            audioSourceSelect.disabled = isRecording;
+
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+                objectUrl = null;
+                console.log("Object URL revocado en updateUI");
+            }
+
+            statusIndicator.textContent = isRecording ? 'Estado: Grabando...' : 'Estado: Inactivo';
+
+            if (isRecording) {
+                startButton.classList.add('btn-disabled');
+                stopButton.classList.remove('btn-disabled');
+            } else {
+                startButton.classList.remove('btn-disabled');
+                stopButton.classList.add('btn-disabled');
+            }
+        }
+
+        function stopAllStreams() {
+            console.log("Intentando detener streams originales y cerrar AudioContext...");
+            let streamsStopped = false;
+
+            // Stop screenStream tracks
+            if (screenStream) {
+                console.log("Deteniendo screenStream tracks...");
+                screenStream.getTracks().forEach(track => {
+                     if (track.readyState === 'live') {
+                        track.onended = null; // Remove listener first
+                        track.stop();
+                        console.log(` - Pista de pantalla detenida: ${track.kind} (${track.id})`);
+                        streamsStopped = true;
+                     }
+                });
+                screenStream = null;
+            } else { console.log("screenStream ya era null."); }
+
+            // Stop micStream tracks
+            if (micStream) {
+                console.log("Deteniendo micStream tracks...");
+                micStream.getTracks().forEach(track => {
+                     if (track.readyState === 'live') {
+                        track.stop();
+                        console.log(` - Pista de micrófono detenida: ${track.kind} (${track.id})`);
+                        streamsStopped = true;
+                     }
+                });
+                micStream = null;
+            } else { console.log("micStream ya era null."); }
+
+            // Close AudioContext if exists and not already closed
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close().then(() => {
+                    console.log("AudioContext cerrado.");
+                }).catch(e => console.error("Error al cerrar AudioContext:", e));
+            } else {
+                 console.log("AudioContext ya era null o estaba cerrado.");
+            }
+            audioContext = null;
+            audioDestination = null;
+
+            if (streamsStopped) { console.log("Streams originales detenidos y referencias limpiadas."); }
+            else { console.log("No había streams activos para detener."); }
+        }
+
+
+        async function startRecording() {
+            hideStatus();
+            if (mediaRecorder && mediaRecorder.state === 'recording') { return; }
+            if (screenStream || micStream || audioContext) { stopAllStreams(); }
+
+            recordedChunks = [];
+            updateUI(true);
+
+            // *** USA displaySurfaceSelect (ahora definido) ***
+            const selectedDisplaySurface = displaySurfaceSelect.value;
+            const selectedAudioSource = audioSourceSelect.value;
+            const captureSystemAudio = selectedAudioSource === 'system' || selectedAudioSource === 'system+mic';
+            const captureMicAudio = selectedAudioSource === 'mic' || selectedAudioSource === 'system+mic';
+
+            systemAudioNote.style.display = captureSystemAudio ? 'block' : 'none';
+
+            const displayMediaOptions = {
+                 video: { cursor: "always", displaySurface: selectedDisplaySurface },
+                 audio: captureSystemAudio,
+                 preferCurrentTab: selectedDisplaySurface === 'browser',
+                 selfBrowserSurface: "exclude",
+                 systemAudio: captureSystemAudio ? "include" : "exclude"
+            };
+            const userMediaOptions = {
+                 audio: captureMicAudio,
+                 video: false
+            };
+
+             try {
+                console.log("--- Iniciando captura ---");
+                screenStream = null;
+                micStream = null;
+                let systemAudioTrack = null;
+                let micAudioTrack = null;
+                let videoTrack = null;
+
+                // 1. Obtener streams y extraer pistas relevantes
+                if (selectedAudioSource !== 'mic') {
+                    console.log("Intentando obtener displayMedia...");
+                    screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+                    console.log("ScreenStream obtenido:", screenStream?.id);
+                    videoTrack = screenStream?.getVideoTracks()[0];
+                    if (videoTrack) {
+                        console.log(` - Video Track: id=${videoTrack.id}, state=${videoTrack.readyState}`);
+                        videoTrack.onended = () => {
+                             console.log("Screen sharing stopped by user (onended event).");
+                             if (mediaRecorder && mediaRecorder.state === "recording") {
+                                 stopRecording();
+                             }
+                         };
+                    } else { console.warn("Screen stream sin pista de video."); }
+
+                    if (captureSystemAudio && screenStream?.getAudioTracks().length > 0) {
+                        systemAudioTrack = screenStream.getAudioTracks()[0];
+                        console.log(`>>> Pista de Audio del Sistema OBTENIDA: id=${systemAudioTrack.id}, state=${systemAudioTrack.readyState}`);
+                    } else if (captureSystemAudio) {
+                        console.warn(">>> Audio del sistema solicitado pero NO OBTENIDO.");
+                    }
+                }
+
+                if (captureMicAudio) {
+                    console.log("Intentando obtener userMedia (micrófono)...");
+                    micStream = await navigator.mediaDevices.getUserMedia(userMediaOptions);
+                    console.log("MicStream obtenido:", micStream?.id);
+                    if (micStream?.getAudioTracks().length > 0) {
+                        micAudioTrack = micStream.getAudioTracks()[0];
+                        console.log(` - Mic Audio Track: id=${micAudioTrack.id}, state=${micAudioTrack.readyState}`);
+                    } else {
+                         console.warn("Mic stream obtenido pero sin pista de audio.");
+                         if (selectedAudioSource === 'mic' || selectedAudioSource === 'system+mic') {
+                             throw new Error("No se pudo obtener la pista de audio del micrófono.");
+                         }
+                    }
+                }
+
+                // --- 2. Combinar Pistas usando AudioContext si hay audio ---
+                let finalStream = new MediaStream();
+                let finalAudioTrack = null; // To check if any audio track is added
+
+                if (videoTrack) {
+                    finalStream.addTrack(videoTrack);
+                    console.log("Pista de video añadida al stream final.");
+                } else if (selectedAudioSource !== 'mic') {
+                    throw new Error("No se pudo obtener la pista de video de la pantalla.");
+                }
+
+                if (systemAudioTrack || micAudioTrack) {
+                    console.log("Configurando AudioContext para mezclar audio...");
+                    audioContext = new AudioContext();
+                    audioDestination = audioContext.createMediaStreamDestination();
+
+                    if (systemAudioTrack) {
+                        try {
+                            const systemSource = audioContext.createMediaStreamSource(new MediaStream([systemAudioTrack]));
+                            systemSource.connect(audioDestination);
+                            console.log("Fuente de audio del sistema conectada al destino.");
+                        } catch (e) { console.error("Error al crear/conectar fuente de audio del sistema:", e); }
+                    }
+                    if (micAudioTrack) {
+                         try {
+                            const micSource = audioContext.createMediaStreamSource(new MediaStream([micAudioTrack]));
+                            micSource.connect(audioDestination);
+                            console.log("Fuente de audio del micrófono conectada al destino.");
+                         } catch (e) { console.error("Error al crear/conectar fuente de audio del micrófono:", e); }
+                    }
+
+                    if (audioDestination.stream.getAudioTracks().length > 0) {
+                        finalAudioTrack = audioDestination.stream.getAudioTracks()[0];
+                        finalStream.addTrack(finalAudioTrack);
+                        console.log("Pista de audio mezclada añadida al stream final.");
+                    } else { console.warn("AudioContext configurado, pero no se generó pista de audio en el destino."); }
+                } else { console.log("No se solicitó ni obtuvo ninguna fuente de audio."); }
+
+                if (finalStream.getTracks().length === 0) {
+                    throw new Error("El stream final no contiene ninguna pista para grabar.");
+                }
+                console.log("Stream final listo para MediaRecorder:", finalStream.getTracks());
+
+
+                // 3. Configurar MediaRecorder con el stream final
+                let mimeType = 'video/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) { mimeType = ''; }
+                const recorderOptions = { mimeType };
+                if (finalAudioTrack) { // Check if the final stream has an audio track
+                    recorderOptions.audioBitsPerSecond = 128000;
+                }
+
+                mediaRecorder = new MediaRecorder(finalStream, recorderOptions);
+                console.log("MediaRecorder creado con stream final.");
+
+                mediaRecorder.ondataavailable = (event) => {
+                     if (event.data.size > 0) {
+                         recordedChunks.push(event.data);
+                     }
+                 };
+                mediaRecorder.onerror = (event) => {
+                     console.error("Error en MediaRecorder:", event.error);
+                     showStatus(`Error durante la grabación: ${event.error.name}`, 'error');
+                     if (mediaRecorder && mediaRecorder.state === "recording") { stopRecording(); }
+                     else { updateUI(false); stopAllStreams(); }
+                 };
+                mediaRecorder.onstop = () => {
+                    console.log("MediaRecorder.onstop iniciado.");
+                    const finalChunks = [...recordedChunks];
+                    recordedChunks = [];
+                    mediaRecorder = null;
+                    console.log("MediaRecorder puesto a null.");
+
+                    if (finalChunks.length === 0) {
+                         console.warn("No se recibieron datos.");
+                         showStatus("No se grabaron datos. ¿Permisos correctos?", 'error');
+                         updateUI(false); stopAllStreams(); return;
+                    }
+                    const blobMimeType = mimeType || 'video/webm';
+                    const blob = new Blob(finalChunks, { type: blobMimeType });
+                    console.log(`Blob creado: tamaño=${blob.size}, tipo=${blob.type}`);
+                    if (blob.size === 0) {
+                         console.error("Blob creado pero tiene tamaño 0.");
+                         showStatus("Error: La grabación resultó en un archivo vacío.", 'error');
+                         updateUI(false); stopAllStreams(); return;
+                    }
+
+                    objectUrl = URL.createObjectURL(blob);
+                    console.log("Blob URL creado:", objectUrl);
+                    downloadLink.href = objectUrl;
+                    const now = new Date();
+                    const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-').replace('T', '_');
+                    downloadLink.download = `grabacion_${timestamp}.webm`;
+                    console.log("Iniciando descarga...");
+                    downloadLink.click();
+
+                    updateUI(false);
+                    stopAllStreams(); // Detiene streams originales y cierra AudioContext
+                    showStatus("Grabación finalizada. Iniciando descarga...", 'success');
+                    console.log("MediaRecorder.onstop finalizado.");
+                };
+
+                // Iniciar grabación
+                mediaRecorder.start(1000);
+                console.log("MediaRecorder iniciado.");
+                showStatus("Grabación iniciada.", 'info');
+
+            } catch (error) {
+                 console.error("Error en startRecording:", error);
+                 let userMessage = `Error al iniciar grabación: ${error.name}`;
+                 if (error.message) { userMessage += ` - ${error.message}`; }
+                 showStatus(userMessage, 'error');
+                 updateUI(false);
+                 stopAllStreams();
+                 mediaRecorder = null;
+            }
+        }
+
+        function stopRecording() {
+            console.log("Botón Stop presionado o evento onended recibido.");
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                console.log("Llamando a MediaRecorder.stop(). Estado actual:", mediaRecorder.state);
+                mediaRecorder.stop();
+            } else {
+                 console.log(`MediaRecorder no estaba grabando (estado: ${mediaRecorder?.state}) o no existe.`);
+                 if (screenStream || micStream || audioContext) {
+                     console.warn("MediaRecorder inactivo pero streams/AudioContext detectados. Limpiando.");
+                     updateUI(false);
+                     stopAllStreams();
+                 } else if (!mediaRecorder) {
+                     updateUI(false);
+                 }
+            }
+        }
+
+        // --- Event Listeners ---
+        startButton.addEventListener('click', startRecording);
+        stopButton.addEventListener('click', stopRecording);
+
+        audioSourceSelect.addEventListener('change', (event) => {
+            const needsSystemAudio = event.target.value === 'system' || event.target.value === 'system+mic';
+            systemAudioNote.style.display = needsSystemAudio ? 'block' : 'none';
+        });
+
+        // Inicializar UI y nota
+        updateUI(false);
+        systemAudioNote.style.display = (audioSourceSelect.value === 'system' || audioSourceSelect.value === 'system+mic') ? 'block' : 'none';
+
+    </script>
+</body>
+</html>
